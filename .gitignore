@@ -10,3 +10,13 @@
 *.lai
 *.la
 *.a
+
+# Backups
+*~
+
+# Build directories
+build*
+
+# Project files
+.kdev4
+*.kdev4
