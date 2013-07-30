@@ -19,8 +19,6 @@ public:
 
   local_date_time(const local_date_time& other) : _utc(other._utc), _tz(other._tz) { }
 
-  local_date_time(local_date_time&& other) : _utc(std::move(other._utc)), _tz(std::move(other._tz)) { }
-  
   local_date_time(boost::posix_time::special_values sv, time_zone_const_ptr tz) : _utc(sv), _tz(tz) { }
   
   const time_zone_const_ptr zone() const { return _tz; }

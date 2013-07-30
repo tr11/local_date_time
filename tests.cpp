@@ -1,5 +1,5 @@
 
-#define BOOST_TEST_MODULE serialization_test
+#define BOOST_TEST_MODULE local_date_time_tests
 #include <boost/test/unit_test.hpp>
 
 #include "local_date_time.hpp"
