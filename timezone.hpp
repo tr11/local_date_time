@@ -207,7 +207,7 @@ private:
     if(z != nullptr)
       return boost::posix_time::to_iso_string(p - z->offset) + " " + z->tz;
     else
-      return boost::posix_time::to_iso_string(p);
+      return boost::posix_time::to_iso_string(p);       // LCOV_EXCL_LINE
   }
   
   std::string utc_to_local_iso_string(const ptime& p) const {
@@ -378,7 +378,7 @@ private:
   static std::vector<std::string> parse_string(const std::string& s) {
     std::vector<std::string> v;
     boost::tokenizer<boost::escaped_list_separator<char> > tok(s);
-    std::transform(tok.begin(), tok.end(), std::back_inserter(v), [](const std::string& p){return p;});
+    std::transform(tok.begin(), tok.end(), std::back_inserter(v), [](const std::string& p){return p;}); 
     return v;
   }
 };

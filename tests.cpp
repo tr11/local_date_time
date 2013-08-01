@@ -94,19 +94,29 @@ BOOST_AUTO_TEST_CASE(test_logic_nullptr_2) {
 }
 
 BOOST_AUTO_TEST_CASE(test_logic_0) {
-  time_zone_ptr tz(new time_zone("test"));
-  boost::gregorian::date d(2000, 1, 1);
-  local_date_time ldt1(d, time_duration(0,0,0), tz);
-  
-  BOOST_CHECK_EQUAL(ldt1.utc_time().date(), d);
-  BOOST_CHECK_EQUAL(ldt1.utc_time().time_of_day(), time_duration(0,0,0));
+  {
+    time_zone_ptr tz(new time_zone("test"));
+    boost::gregorian::date d(2000, 1, 1);
+    local_date_time ldt1(d, time_duration(0,0,0), tz);
+    
+    BOOST_CHECK_EQUAL(ldt1.utc_time().date(), d);
+    BOOST_CHECK_EQUAL(ldt1.utc_time().time_of_day(), time_duration(0,0,0));
 
-  tz->add_entry(0, time_zone_entry_info(7200, "ABC", false));
-  local_date_time ldt2(d, time_duration(0,0,0), tz);
-  
-  BOOST_CHECK_EQUAL(ldt2.utc_time().date(), d);
-  BOOST_CHECK_EQUAL(ldt2.utc_time().time_of_day(), time_duration(2,0,0));
-  
+    tz->add_entry(0, time_zone_entry_info(7200, "ABC", false));
+    local_date_time ldt2(d, time_duration(0,0,0), tz);
+    
+    BOOST_CHECK_EQUAL(ldt2.utc_time().date(), d);
+    BOOST_CHECK_EQUAL(ldt2.utc_time().time_of_day(), time_duration(2,0,0));
+  }
+  {
+    time_zone_ptr tz;
+    boost::gregorian::date d(2000, 1, 1);
+    local_date_time ldt1(d, time_duration(0,0,0), tz);
+    
+    BOOST_CHECK_EQUAL(ldt1.utc_time().date(), d);
+    BOOST_CHECK_EQUAL(ldt1.utc_time().time_of_day(), time_duration(0,0,0));
+    BOOST_CHECK_EQUAL(ldt1.local_time(), ldt1.utc_time());
+  }
 }
 
 BOOST_AUTO_TEST_CASE(test_logic_1) {
