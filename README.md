@@ -1,7 +1,7 @@
 local_date_time
 ===============
 
-[![Build Status](https://api.travis-ci.org/tr11/local_date_time.png?branch=master)](https://api.travis-ci.org/tr11/local_date_time.png?branch=master)
+[![Build Status](https://api.travis-ci.org/tr11/local_date_time.png?branch=master)](https://travis-ci.org/tr11/local_date_time)
 
 The local_date_time C++ library is intended to be a replacement to the Local Time classes in the excellent Boost Date Time library (http://www.boost.org/libs/date_time/).
 
