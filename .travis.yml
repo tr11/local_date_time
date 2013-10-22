@@ -28,7 +28,7 @@ script:
  - ./unittests
 
 after_success:
- - coveralls --exclude lib --exclude unittests
+ - coveralls
   
 env:
  - REAL_CXX=g++-4.7     REAL_CC=gcc-4.7
