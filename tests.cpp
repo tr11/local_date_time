@@ -692,19 +692,25 @@ BOOST_AUTO_TEST_CASE(test_local_date_time_operations) {
 BOOST_AUTO_TEST_CASE(test_local_date_time_strings) {
   time_zone_database tzdb( time_zone_database::from_struct(zones_struct_simple) );
   time_zone_ptr tz = time_zone::duplicate(tzdb.time_zone_from_region("TZ_1"));
+  time_zone_ptr tz2 = time_zone::duplicate(tzdb.time_zone_from_region("TZ_2"));
   
   time_zone_ptr newtz(new time_zone("A"));
   ptime p(boost::gregorian::date(2000, 1, 1));
   BOOST_CHECK_EQUAL(local_date_time(p, newtz).to_iso_string(), "20000101T000000");
   
   local_date_time ldt(p, tz);
+  local_date_time ldt_tz2(p, tz2);
   
   BOOST_CHECK_EQUAL(ldt.to_string(), "19991231T230000 DST");
-  BOOST_CHECK_EQUAL(ldt.to_iso_string(), "19991231T230000+0100");
+  BOOST_CHECK_EQUAL(ldt.to_iso_string(), "19991231T230000-0100");
+
+  BOOST_CHECK_EQUAL(ldt_tz2.to_string(), "20000101T010000 DST");
+  BOOST_CHECK_EQUAL(ldt_tz2.to_iso_string(), "20000101T010000+0100");
+
   
   tz->add_entry(3600LL*48*1000000, time_zone_entry_info(3601, "ABC", false));
   BOOST_CHECK_EQUAL(ldt.to_string(), "19991231T225959 ABC");
-  BOOST_CHECK_EQUAL(ldt.to_iso_string(), "19991231T225959+010001");
+  BOOST_CHECK_EQUAL(ldt.to_iso_string(), "19991231T225959-010001");
   
   time_zone_ptr emptytz;
   local_date_time ldt2(p, emptytz);
@@ -857,6 +863,70 @@ BOOST_AUTO_TEST_CASE(test_local_date_time_manual_entries) {
   }  
   
 }
+
+
+BOOST_AUTO_TEST_CASE(test_local_date_time_zoneinfo) {
+  time_zone_database tzdb;
+
+  time_zone_ptr tz(new time_zone(time_zone::from_zoneinfo("America/New_York", "/usr/share/zoneinfo")));
+  tzdb.add_record("America/New_York", tz);
+
+  // get temp path
+  boost::filesystem::path path;
+  while( path.empty() || boost::filesystem::exists(path) ) {
+    path = boost::filesystem::temp_directory_path();
+    path /= boost::filesystem::unique_path("%%%%-%%%%-%%%%-%%%%");
+  }
+
+  boost::filesystem::ofstream fo(path);
+  fo << "fragment,941349600000000,18000,EST,0\n"
+     << "fragment,954658800000000,14400,EDT,1\n"
+     << "fragment,972799200000000,18000,EST,0\n"
+     << "fragment,986108400000000,14400,EDT,1\n"
+     << "fragment,1004248800000000,18000,EST,0";
+  fo.close();
+  
+  tzdb.add_record("fragment", time_zone::duplicate(time_zone_database::from_file(path.string()).time_zone_from_region("fragment")));
+  boost::filesystem::remove(path);
+
+  {
+    local_date_time ldt1(boost::posix_time::ptime(boost::gregorian::date(2000, 4, 2), boost::posix_time::time_duration(6,59,59)), tzdb.time_zone_from_region("fragment"));
+    BOOST_CHECK_EQUAL(ldt1.to_iso_string(), "20000402T015959-0500");
+    BOOST_CHECK_EQUAL(ldt1.utc_time(), boost::posix_time::ptime(boost::gregorian::date(2000, 4, 2), boost::posix_time::time_duration(6,59,59)));
+
+    local_date_time ldt2(boost::posix_time::ptime(boost::gregorian::date(2000, 4, 2), boost::posix_time::time_duration(7,0,0)), tzdb.time_zone_from_region("fragment"));
+    BOOST_CHECK_EQUAL(ldt2.to_iso_string(), "20000402T030000-0400");
+    BOOST_CHECK_EQUAL(ldt2.utc_time(), boost::posix_time::ptime(boost::gregorian::date(2000, 4, 2), boost::posix_time::time_duration(7,0,0)));
+  }
+  {
+    local_date_time ldt1(boost::gregorian::date(2000, 4, 2), boost::posix_time::time_duration(1,59,59), tzdb.time_zone_from_region("fragment"));
+    BOOST_CHECK_EQUAL(ldt1.to_iso_string(), "20000402T015959-0500");
+    BOOST_CHECK_EQUAL(ldt1.utc_time(), boost::posix_time::ptime(boost::gregorian::date(2000, 4, 2), boost::posix_time::time_duration(6,59,59)));
+
+    local_date_time ldt2(boost::gregorian::date(2000, 4, 2), boost::posix_time::time_duration(3,0,0), tzdb.time_zone_from_region("fragment"));
+    BOOST_CHECK_EQUAL(ldt2.to_iso_string(), "20000402T030000-0400");
+    BOOST_CHECK_EQUAL(ldt2.utc_time(), boost::posix_time::ptime(boost::gregorian::date(2000, 4, 2), boost::posix_time::time_duration(7,0,0)));
+  }
+  {
+    local_date_time ldt1(boost::posix_time::ptime(boost::gregorian::date(2000, 4, 2), boost::posix_time::time_duration(6,59,59)), tzdb.time_zone_from_region("America/New_York"));
+    BOOST_CHECK_EQUAL(ldt1.to_iso_string(), "20000402T015959-0500");
+    BOOST_CHECK_EQUAL(ldt1.utc_time(), boost::posix_time::ptime(boost::gregorian::date(2000, 4, 2), boost::posix_time::time_duration(6,59,59)));
+
+    local_date_time ldt2(boost::posix_time::ptime(boost::gregorian::date(2000, 4, 2), boost::posix_time::time_duration(7,0,0)), tzdb.time_zone_from_region("America/New_York"));
+    BOOST_CHECK_EQUAL(ldt2.to_iso_string(), "20000402T030000-0400");
+    BOOST_CHECK_EQUAL(ldt2.utc_time(), boost::posix_time::ptime(boost::gregorian::date(2000, 4, 2), boost::posix_time::time_duration(7,0,0)));
+  }
+  {
+    local_date_time ldt1(boost::gregorian::date(2000, 4, 2), boost::posix_time::time_duration(1,59,59), tzdb.time_zone_from_region("America/New_York"));
+    BOOST_CHECK_EQUAL(ldt1.to_iso_string(), "20000402T015959-0500");
+    BOOST_CHECK_EQUAL(ldt1.utc_time(), boost::posix_time::ptime(boost::gregorian::date(2000, 4, 2), boost::posix_time::time_duration(6,59,59)));
+
+    local_date_time ldt2(boost::gregorian::date(2000, 4, 2), boost::posix_time::time_duration(3,0,0), tzdb.time_zone_from_region("America/New_York"));
+    BOOST_CHECK_EQUAL(ldt2.to_iso_string(), "20000402T030000-0400");
+    BOOST_CHECK_EQUAL(ldt2.utc_time(), boost::posix_time::ptime(boost::gregorian::date(2000, 4, 2), boost::posix_time::time_duration(7,0,0)));
+  }
+}
+
 
 BOOST_AUTO_TEST_CASE(make_gcov_happy) {
   std::unique_ptr<local_time_exception> a(new local_time_exception(""));

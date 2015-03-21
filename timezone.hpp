@@ -9,6 +9,17 @@
 #include <fstream>
 #include <set>
 #include <iterator>
+#include <boost/filesystem.hpp>
+
+
+#ifdef USE_ZONEINFO
+#include <tuple>
+extern "C" {
+#include "tzfile.h"
+#include "stdint.h"
+}
+#endif //USE_ZONEINFO
+
 
 namespace local_time {
 
@@ -110,6 +121,129 @@ public:
     return ptr;
   }
   
+  #ifdef USE_ZONEINFO
+  static time_zone from_zoneinfo(const std::string& name, const std::string& path=TZDIR) {
+    boost::filesystem::path file_path(path);
+    file_path /= name;
+
+    // read tzhead
+    std::ifstream ifs(file_path.string(), std::ios::binary);
+    if(!ifs.good())
+      throw std::runtime_error("Error opening zone file '" + file_path.string() + "'"); // LCOV_EXCL_LINE
+    ifs.seekg(0, std::ios::beg);
+
+    union th_union_t {
+      tzhead                head;
+      const char*           ptr;
+    };
+
+    #ifndef TYPE_SIGNED
+    #define TYPE_SIGNED(type) (((type) -1) < 0)
+    #endif /* !defined TYPE_SIGNED */
+
+    /* The minimum and maximum finite time values.  */
+    static time_t const time_t_min =
+      (TYPE_SIGNED(time_t)
+      ? (time_t) -1 << (CHAR_BIT * sizeof (time_t) - 1)
+      : 0);
+    static time_t const time_t_max =
+      (TYPE_SIGNED(time_t)
+      ? - (~ 0 < 0) - ((time_t) -1 << (CHAR_BIT * sizeof (time_t) - 1))
+      : -1);
+
+      std::string contents;
+    ifs.seekg(0, std::ios::end);
+    contents.resize(ifs.tellg());
+    ifs.seekg(0, std::ios::beg);
+    ifs.read(&contents[0], contents.size());
+    ifs.close();
+
+    const char* data = contents.c_str();
+    const th_union_t *th_union = reinterpret_cast<const th_union_t*>(data);
+    const tzhead* th = &th_union->head;
+
+    if(std::string(th->tzh_magic, 4) != TZ_MAGIC)
+      throw std::runtime_error("Invalid zone file '" + file_path.string() + "'"); // LCOV_EXCL_LINE
+
+    std::vector<time_t> transitions;
+    std::vector<std::tuple<int, bool, short>> types;
+    std::vector<unsigned char> transition_types;
+    const char* abbr;
+
+    for (int stored = 4; stored <= 8; stored *= 2) {
+      int ttisstdcnt = (int) detzcode(th->tzh_ttisstdcnt);
+      int ttisgmtcnt = (int) detzcode(th->tzh_ttisgmtcnt);
+      int leapcnt = (int) detzcode(th->tzh_leapcnt);
+      int timecnt = (int) detzcode(th->tzh_timecnt);
+      int typecnt = (int) detzcode(th->tzh_typecnt);
+      int charcnt = (int) detzcode(th->tzh_charcnt);
+
+      const char* ptr = th->tzh_charcnt + sizeof(th->tzh_charcnt);
+      if (leapcnt < 0 || leapcnt > TZ_MAX_LEAPS || typecnt <= 0 || typecnt > TZ_MAX_TYPES || timecnt < 0 || timecnt > TZ_MAX_TIMES || charcnt < 0 || charcnt > TZ_MAX_CHARS || (ttisstdcnt != typecnt && ttisstdcnt != 0) || (ttisgmtcnt != typecnt && ttisgmtcnt != 0))
+        throw std::runtime_error("Error reading zone file '" + file_path.string() + "' struct"); // LCOV_EXCL_LINE
+      if (contents.size() < (sizeof(tzhead)       /* struct tzhead */ + timecnt * stored   /* ats */ + timecnt        /* types */ + typecnt * 6        /* ttinfos */ + charcnt        /* chars */ + leapcnt * (stored + 4) /* lsinfos */ + ttisstdcnt     /* ttisstds */ + ttisgmtcnt))       /* ttisgmts */
+        throw std::runtime_error("Error reading zone file '" + file_path.string() + "' struct"); // LCOV_EXCL_LINE
+
+      transitions.reserve(timecnt);
+      transitions.resize(0);
+      for (int i = 0; i < timecnt; ++i) {
+          int_fast64_t at = stored == 4 ? detzcode(ptr) : detzcode64(ptr);
+          if(at <= time_t_max) {
+            transitions.push_back(((TYPE_SIGNED(time_t) ? at < time_t_min : at < 0) ? time_t_min : at));
+          }
+          ptr += stored;
+      }
+
+      transition_types.reserve(timecnt);
+      transition_types.resize(0);
+      for(int i=0; i<timecnt; ++i) {
+          unsigned char typ = *ptr++;
+          if (typecnt <= typ)
+            throw std::runtime_error("Error reading zone file '" + file_path.string() + "' struct"); // LCOV_EXCL_LINE
+          transition_types.push_back(typ);
+      }
+
+      types.reserve(typecnt);
+      for(int i = 0; i < typecnt; ++i) {
+          /* gmt offset */
+          int offset = detzcode(ptr);
+          ptr += 4;
+          /* dst */
+          if(!(*ptr < 2))
+            throw std::runtime_error("Error reading zone file '" + file_path.string() + "' struct"); // LCOV_EXCL_LINE
+          bool dst = *ptr;
+          ptr++;
+          /* abbr */
+          short abbrind = *ptr++;
+          if (! (abbrind < charcnt))
+            throw std::runtime_error("Error reading zone file '" + file_path.string() + "' struct"); // LCOV_EXCL_LINE
+          types.push_back(std::make_tuple(-offset, dst, abbrind));
+      }
+
+      abbr = ptr;
+      ptr += charcnt;
+      ptr += leapcnt * 2 * stored;
+      ptr += typecnt; // tt_ttisstd
+      ptr += typecnt; // tt_ttisgmt
+
+      if (th->tzh_version[0] == '\0')
+          break; // LCOV_EXCL_LINE
+
+      // get ready for 8 bytes
+      th_union = reinterpret_cast<const th_union_t*>(ptr);
+      th = &th_union->head;
+    }
+
+    time_zone this_tz(name);
+    for(std::size_t i=0; i<transitions.size(); ++i) {
+      this_tz.add_entry(transitions[i] * 1000000, time_zone_entry_info(std::get<0>(types[transition_types[i]]), std::string(abbr + std::get<2>(types[transition_types[i]])), std::get<1>(types[transition_types[i]])));
+    }
+
+    return this_tz;
+    #undef TYPE_SIGNED
+  }
+  #endif //USE_ZONEINFO
+
 private:
 
   std::string                            _name;         //!< time zone name
@@ -134,8 +268,10 @@ private:
   const time_zone_entry_info* zone_info_from_utc(const ptime& p) const {
     if(!_data.size())
       return nullptr;
-    auto prev = --(_data.lower_bound(p));
-    return &prev->second;
+    auto match = _data.lower_bound(p);
+    if(match->first != p)
+    match--;
+    return &match->second;
   }
   
   const time_zone_entry_info* zone_info_from_local(const ptime& loc, automatic_conversion dst = THROW_ON_AMBIGUOUS) const {
@@ -221,14 +357,38 @@ private:
       auto m = z->offset.minutes();
       auto s = z->offset.seconds();
       
-      ss << (z->offset.is_negative() ? '-' : '+');
-      ss << std::setfill('0') << std::setw(2) << h << std::setw(2) << m;
+      if(z->offset.is_negative())
+        ss << '+' << std::setfill('0') << std::setw(2) << (-h) << std::setw(2) << m;
+      else
+        ss << '-' << std::setfill('0') << std::setw(2) << h << std::setw(2) << m;
       if(s)
         ss << std::setw(2) << s;
     }
     return ss.str();
   }
   
+  #ifdef USE_ZONEINFO
+  static int_fast32_t detzcode(const char *const codep) {
+      int_fast32_t  result;
+      int           i;
+
+      result = (codep[0] & 0x80) ? -1 : 0;
+      for (i = 0; i < 4; ++i)
+          result = (result << 8) | (codep[i] & 0xff);
+      return result;
+  }
+
+  static int_fast64_t detzcode64(const char *const codep) {
+      register int_fast64_t result;
+      register int    i;
+
+      result = (codep[0] & 0x80) ? -1 : 0;
+      for (i = 0; i < 8; ++i)
+          result = (result << 8) | (codep[i] & 0xff);
+      return result;
+  }
+  #endif //USE_ZONEINFO
+
   friend class time_zone_database;
   friend class local_date_time;
 }; 
@@ -384,10 +544,5 @@ private:
 };
 
 
-
-
-
 }
-
-
 #endif
