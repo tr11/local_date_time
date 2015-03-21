@@ -379,8 +379,8 @@ private:
   }
 
   static int_fast64_t detzcode64(const char *const codep) {
-      register int_fast64_t result;
-      register int    i;
+      int_fast64_t  result;
+      int           i;
 
       result = (codep[0] & 0x80) ? -1 : 0;
       for (i = 0; i < 8; ++i)
